@@ -1,31 +1,35 @@
-SSID = "SSID"
-PASS = "PASS"
-DST_URL = "http://example.com/fetch.php"
+--[[
+    Please create config.lua file with following parameters:
+    WIFI_SSID = "ap-ssid"
+    WIFI_PASS = "ap-password"
+    PUSH_URL = "http://example.com/push.php"
+]]
+dofile("config.lua")
 
 OW_PIN = 7
 ow.setup( OW_PIN )
 
-function search_device()
-   addr = ow.search( OW_PIN )
-   if addr then
-     print(string.format("found: %02X%02X%02X%02X%02X%02X%02X%02X",addr:byte(1,9))) 
-     return addr
-   else
-    return nil
-   end    
+local function search_device()
+    local addr = ow.search( OW_PIN )
+    if addr then
+        print(string.format("found: %02X%02X%02X%02X%02X%02X%02X%02X",addr:byte(1,9))) 
+        return addr
+    else
+        return nil
+    end   
 end
 
 time = 0
    
-function get_temp()    
+local function get_temp()    
     ow.reset_search( OW_PIN )
     print("searching for sensors ...")
 
     addrs = {}
     repeat
-        addr = search_device()
+        local addr = search_device()
         if addr then
-            table.insert(addrs, addr)
+            table.insert( addrs, addr)
         end
     until addr == nil
     
@@ -65,7 +69,7 @@ function get_temp()
     
     
         if params ~= "?" then
-           http.get( DST_URL .. params, nil, function(code, data)
+           http.get( PUSH_URL .. params, nil, function(code, data)
                 if code == 200 then
                     time = tonumber( data )
                     print("SEND OK (" .. data .. ")")
@@ -115,7 +119,7 @@ wifi.eventmon.register(wifi.eventmon.STA_CONNECTED, function( T )
     end
 end)
 
-wifi.eventmon.register(wifi.eventmon.STA_DISCONNECTED, function( T )
+wifi.eventmon.register( wifi.eventmon.STA_DISCONNECTED, function( T )
     tmr.stop(0)
     tmr.stop(2)
     print( "disconnected: " .. T.SSID )
@@ -141,7 +145,7 @@ wifi.eventmon.register( wifi.eventmon.STA_DHCP_TIMEOUT, function()
     end)
 end)
 
-wifi.eventmon.register(wifi.eventmon.STA_GOT_IP, function( T ) 
+wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T ) 
     print("ipaddr: " .. T.IP)
     drawClean(function()
         disp:drawStr( 20, 22, "NET CONNECTED" )
@@ -156,4 +160,4 @@ wifi.eventmon.register(wifi.eventmon.STA_GOT_IP, function( T )
 
 end)
 
-wifi.sta.config( SSID, PASS, 1 )
+wifi.sta.config( WIFI_SSID, WIFI_PASS, 1 )
