@@ -9,39 +9,26 @@ dofile("config.lua")
 OW_PIN = 7
 ow.setup( OW_PIN )
 
-local function search_device()
-    local addr = ow.search( OW_PIN )
-    if addr then
-        print(string.format("found: %02X%02X%02X%02X%02X%02X%02X%02X",addr:byte(1,9))) 
-        return addr
-    else
-        return nil
-    end   
-end
-
-time = 0
-   
-local function get_temp()    
-    ow.reset_search( OW_PIN )
-    print("searching for sensors ...")
-
-    addrs = {}
+local function ow_search()
+    ow.reset_search( OW_PIN )    
+    local addrs = {}
     repeat
-        local addr = search_device()
+        local addr = ow.search( OW_PIN )
         if addr then
             table.insert( addrs, addr)
         end
     until addr == nil
-    
-    for i,addr in ipairs(addrs) do
-        ow.reset( OW_PIN )
-        ow.select( OW_PIN, addr)
-        ow.write( OW_PIN, 0x44, 1)
-    end
+    return addrs
+end
+  
+local function fetch_data()    
+    local addrs = ow_search()
+
+    ow.reset( OW_PIN )
+    ow.skip( OW_PIN )
+    ow.write( OW_PIN, 0x44, 1)
 
     tmr.alarm( 3, 750, 0, function()
-   
-        params = "?"
         result = {}
         for i,addr in ipairs(addrs) do
             ow.reset( OW_PIN )
@@ -52,54 +39,52 @@ local function get_temp()
             for i = 1, 8 do
                 data = data .. string.char(ow.read( OW_PIN ))
             end 
-            -- print(string.format("%02X%02X%02X%02X%02X%02X%02X%02X",data:byte(1,9)))
+            local romcode = string.format("%02X%02X%02X%02X%02X%02X%02X%02X",addr:byte(1,9))
             crc = ow.crc8(string.sub(data,1,8))
             if crc == data:byte(9) then
     			t = (data:byte(1) + data:byte(2) * 256) * 625
                 t1 = t / 10000
-                params = params .. string.format("serial"..i.."=%02X%02X%02X%02X%02X%02X%02X%02X&temperature"..i.."="..t1.."&",addr:byte(1,9))
-                print(string.format("%02X%02X%02X%02X%02X%02X%02X%02X => "..t1,addr:byte(1,9)))
-                print(string.format("%4.1f",t1))
-                table.insert( result, { name = "T"..i, temp = string.format("%4.1f",t1) } )
+                print(string.format("%s => %4.1f", romcode, t1))
+                table.insert( result, { romcode = romcode, temp = t1 } )
             else
-                table.insert( result, { name = "T"..i, temp = "ERROR" } )
+                table.insert( result, { romcode = romcode, temp = nil } )
             end
         end
-    
-    
-    
-        if params ~= "?" then
-           http.get( PUSH_URL .. params, nil, function(code, data)
-                if code == 200 then
-                    time = tonumber( data )
-                    print("SEND OK (" .. data .. ")")
-                else
-                    time = "ERROR"
-                    print("SEND ERROR " .. code)
+
+        local response = '{"jsonrpc":"2.0","id":' .. node.flashid() .. ',"method":"ESP8266.push","params":{"vbatt":' .. adc.readvdd33()/1000 .. ',"timestamp":' .. rtctime.get() .. ',"sensors":['
+        if table.getn( result ) > 0 then
+            for idx, sensor in ipairs( result ) do
+                if idx > 1 then response = response .. ',' end
+                local t = sensor.temp
+                if t == nil then
+                    t = 'null'
                 end
-           end)
+                response = response .. '{"romcode":"' .. sensor.romcode .. '","temp":'.. t .. '}'
+            end
         end
-    
+        response = response .. ']}}'    
+        print( response )
+        http.post( PUSH_URL, 'Origin: zeus.mindc.net\r\nContent-Type: application/json\r\n', response, function( code, data )
+            print(code, data)
+        end)
         print("heap: " .. node.heap() )
     
     end)
 end
 
 tmr.alarm(2, 1000, 1, function()
-    --if not tmr.state(3) then
+    local sec, usec = rtctime.get()
     drawClean(function()
-        lines = 0
+        local lines = 0
         disp:setScale2x2()
-        for key,value in ipairs(result) do
-            disp:drawStr(0, 11 * lines, string.format("%2s %5s%sC",value.name, value.temp, string.char(176) ) )
+        for idx,value in ipairs(result) do
+            disp:drawStr(0, 11 * lines, string.format("T%d %5.1f%sC", idx, value.temp, string.char(176) ) )
             lines = lines + 1
         end
-        disp:drawStr( 0, 22, time )
-        disp:undoScale()        
-        
+        disp:undoScale()
+        disp:drawStr( 0, 11 * 2*lines, 'TIMESTAMP: ' .. sec )
+        disp:drawStr( 0, 11 * 2*lines + 11, 'VBATT: ' .. adc.readvdd33() / 1000 .. 'V' )        
     end)
-    time = time + 1
-    --end
 end)
 
 tmr.stop(2)
@@ -152,12 +137,19 @@ wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T )
         disp:drawStr( 20, 33, wifi.sta.getip() )
         disp:drawStr( 20, 44, wifi.sta.getrssi() .. " dbi" )        
     end)
-    tmr.start(2)
-    get_temp()
-    tmr.alarm(0, 60*1000, 1, function()
-        get_temp()
+    print("get ntp ...")
+    sntp.sync('tempus1.gum.gov.pl', function(sec,usec,server)
+        print("ntp ok: " .. sec )
+        tmr.start(2)
+        fetch_data()
+        tmr.alarm(0, 60*1000, 1, function()
+            fetch_data()
+        end)
+    end,
+    function()
+        print("ntp failed ...")
+        node.restart()
     end)
-
 end)
 
 wifi.sta.config( WIFI_SSID, WIFI_PASS, 1 )

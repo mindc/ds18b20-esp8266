@@ -1,3 +1,5 @@
+adc.force_init_mode(adc.INIT_VDD33)
+
 function init_OLED(sda,scl) --Set up the u8glib lib
     sla = 0x3c
     i2c.setup(0, sda, scl, i2c.SLOW)
