@@ -44,6 +44,9 @@ local function fetch_data()
             if crc == data:byte(9) then
     			t = (data:byte(1) + data:byte(2) * 256) * 625
                 t1 = t / 10000
+                if t1 > 4032 then
+                    t1 = t1 - 4096
+                end
                 print(string.format("%s => %4.1f", romcode, t1))
                 table.insert( result, { romcode = romcode, temp = t1 } )
             else
