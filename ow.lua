@@ -1,10 +1,4 @@
---[[
-    Please create config.lua file with following parameters:
-    WIFI_SSID = "ap-ssid"
-    WIFI_PASS = "ap-password"
-    PUSH_URL = "http://example.com/push.php"
-]]
-dofile("config.lua")
+require 'configuration'
 
 OW_PIN = 7
 ow.setup( OW_PIN )
@@ -54,24 +48,28 @@ local function fetch_data()
             end
         end
 
-        local response = '{"jsonrpc":"2.0","id":' .. node.flashid() .. ',"method":"ESP8266.push","params":{"vbatt":' .. adc.readvdd33()/1000 .. ',"timestamp":' .. rtctime.get() .. ',"sensors":['
+        local request = '{'
+        request = request .. '"jsonrpc":"2.0","id":' .. node.flashid() .. ',"method":"ESP8266.push","params":{'
+        request = request .. '"vdd":' .. adc.readvdd33()/1000 .. ',"timestamp":' .. rtctime.get() .. ','
+        request = request .. '"ipaddr":"' .. wifi.sta.getip() .. '","rssi":' .. wifi.sta.getrssi() .. ','
+        request = request .. '"sensors":['
+
         if table.getn( result ) > 0 then
             for idx, sensor in ipairs( result ) do
-                if idx > 1 then response = response .. ',' end
+                if idx > 1 then request = request .. ',' end
                 local t = sensor.temp
                 if t == nil then
                     t = 'null'
                 end
-                response = response .. '{"romcode":"' .. sensor.romcode .. '","temp":'.. t .. '}'
+                request = request .. '{"romcode":"' .. sensor.romcode .. '","temp":'.. t .. '}'
             end
         end
-        response = response .. ']}}'    
-        print( response )
-        http.post( PUSH_URL, 'Origin: zeus.mindc.net\r\nContent-Type: application/json\r\n', response, function( code, data )
-            print(code, data)
+        request = request .. ']}}'    
+        print( request )
+        http.post( configuration.jsonrpc.url, configuration.jsonrpc.headers, request, function( code, data )
+                print(code, data)
         end)
         print("heap: " .. node.heap() )
-    
     end)
 end
 
@@ -115,15 +113,6 @@ wifi.eventmon.register( wifi.eventmon.STA_DISCONNECTED, function( T )
         disp:drawStr( 20, 22, "WIFI DISCONNECTED" )
         disp:drawStr( 20, 33, T.reason )
     end)
---[[
-    if T.reason == wifi.eventmon.reason.NO_AP_FOUND then
-        tmr.alarm(1, 5*1000, 0, function()
-            print ( "reconnecting ..." )
-            -- wifi.sta.connect()
-        end)
-    end
-]]--        
-    
 end)
 
 wifi.eventmon.register( wifi.eventmon.STA_DHCP_TIMEOUT, function()
@@ -131,6 +120,7 @@ wifi.eventmon.register( wifi.eventmon.STA_DHCP_TIMEOUT, function()
     drawClean(function()
         disp:drawStr( 20, 22, "DHCP TIMEOUT" )
     end)
+    node.restart()
 end)
 
 wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T ) 
@@ -141,7 +131,7 @@ wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T )
         disp:drawStr( 20, 44, wifi.sta.getrssi() .. " dbi" )        
     end)
     print("get ntp ...")
-    sntp.sync('tempus1.gum.gov.pl', function(sec,usec,server)
+    sntp.sync( configuration.ntpServer, function( sec, usec, server )
         print("ntp ok: " .. sec )
         tmr.start(2)
         fetch_data()
@@ -155,4 +145,4 @@ wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T )
     end)
 end)
 
-wifi.sta.config( WIFI_SSID, WIFI_PASS, 1 )
+wifi.sta.config( configuration.ssid, configuration.password, 1 )
