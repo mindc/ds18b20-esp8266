@@ -1,55 +1,23 @@
-require 'configuration'
+local ow_simple = require 'ow_simple'
+
+function readJSON( filename )
+    local json = require "cjson"
+    file.open( filename ,"r")
+    local content = file.read()
+    local data = json.decode( content )
+    file.close()    
+    return data
+end
 
 OW_PIN = 7
 ow.setup( OW_PIN )
 
-local function ow_search()
-    ow.reset_search( OW_PIN )    
-    local addrs = {}
-    repeat
-        local addr = ow.search( OW_PIN )
-        if addr then
-            table.insert( addrs, addr)
-        end
-    until addr == nil
-    return addrs
-end
-  
+local jsonrpc_conf = readJSON( 'jsonrpc.conf.json' )
+
 local function fetch_data()    
-    local addrs = ow_search()
-
-    ow.reset( OW_PIN )
-    ow.skip( OW_PIN )
-    ow.write( OW_PIN, 0x44, 1)
-
-    tmr.alarm( 3, 750, 0, function()
-        result = {}
-        for i,addr in ipairs(addrs) do
-            ow.reset( OW_PIN )
-            ow.select( OW_PIN, addr )
-            ow.write( OW_PIN, 0xBE, 1 )
-            data = nil
-            data = string.char(ow.read( OW_PIN ))
-            for i = 1, 8 do
-                data = data .. string.char(ow.read( OW_PIN ))
-            end 
-            local romcode = string.format("%02X%02X%02X%02X%02X%02X%02X%02X",addr:byte(1,9))
-            crc = ow.crc8(string.sub(data,1,8))
-            if crc == data:byte(9) then
-    			t = (data:byte(1) + data:byte(2) * 256) * 625
-                t1 = t / 10000
-                if t1 > 4032 then
-                    t1 = t1 - 4096
-                end
-                print(string.format("%s => %4.1f", romcode, t1))
-                table.insert( result, { romcode = romcode, temp = t1 } )
-            else
-                table.insert( result, { romcode = romcode, temp = nil } )
-            end
-        end
-
+    ow_simple.fetch( function( result )
         local request = '{'
-        request = request .. '"jsonrpc":"2.0","id":' .. node.flashid() .. ',"method":"ESP8266.push","params":{'
+        request = request .. '"jsonrpc":"2.0","id":' .. tmr.now() .. ',"method":"' .. jsonrpc_conf.method .. '","params":{'
         request = request .. '"vdd":' .. adc.readvdd33()/1000 .. ',"timestamp":' .. rtctime.get() .. ','
         request = request .. '"ipaddr":"' .. wifi.sta.getip() .. '","rssi":' .. wifi.sta.getrssi() .. ','
         request = request .. '"sensors":['
@@ -66,10 +34,9 @@ local function fetch_data()
         end
         request = request .. ']}}'    
         print( request )
-        http.post( configuration.jsonrpc.url, configuration.jsonrpc.headers, request, function( code, data )
-                print(code, data)
+        http.post( jsonrpc_conf.url, jsonrpc_conf.headers, request, function( code, data )
+            print(code, data)
         end)
-        print("heap: " .. node.heap() )
     end)
 end
 
@@ -131,7 +98,7 @@ wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T )
         disp:drawStr( 20, 44, wifi.sta.getrssi() .. " dbi" )        
     end)
     print("get ntp ...")
-    sntp.sync( configuration.ntpServer, function( sec, usec, server )
+    sntp.sync( 'tempus1.gum.gov.pl', function( sec, usec, server )
         print("ntp ok: " .. sec )
         tmr.start(2)
         fetch_data()
@@ -145,4 +112,5 @@ wifi.eventmon.register( wifi.eventmon.STA_GOT_IP, function( T )
     end)
 end)
 
-wifi.sta.config( configuration.ssid, configuration.password, 1 )
+local wifi_conf = readJSON( 'wifi.conf.json' )
+wifi.sta.config( wifi_conf.ssid, wifi_conf.password, 1 )
