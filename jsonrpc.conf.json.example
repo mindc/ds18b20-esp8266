@@ -1,0 +1,5 @@
+{
+	"url": "url to jsonrpc api",
+	"headers": nil,
+	"method": "jsonrpc method name"
+}

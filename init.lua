@@ -25,5 +25,5 @@ end)
 
 print("startup delay: 10 sec")
 tmr.alarm(0, 10000, 0, function() 
-    dofile("ow.lua") 
+    dofile("main.lua") 
 end)
