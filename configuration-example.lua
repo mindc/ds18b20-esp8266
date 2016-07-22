@@ -1,11 +1,11 @@
 local configuration= 
 {
-    ssid= 'ssid'
-    password= 'password'
-    ntpServer= 'time.nist.gov'
+    ssid= 'ssid',
+    password= 'password',
+    ntpServer= 'time.nist.gov',
     jsonrpc= 
     {
-        url= 'http://example.com'
+        url= 'http://example.com',
         headers= ''
     }
 }
