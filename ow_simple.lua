@@ -1,6 +1,6 @@
 local ow_simple = {
     fetch = function ( callback )
-        ow.reset_search( OW_PIN )    
+        ow.reset_search( OW_PIN )  
         local addrs = {}
         repeat
             local addr = ow.search( OW_PIN )
